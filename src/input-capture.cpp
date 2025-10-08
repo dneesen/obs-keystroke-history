@@ -119,37 +119,85 @@ bool matches_obs_source_target(keystroke_source* context, HWND current_hwnd, con
     obs_data_t* settings = obs_source_get_settings(source);
     bool matches = false;
     
-    blog(LOG_DEBUG, "[SOURCE-FILTER] Checking source '%s' (type: %s)", 
+    blog(LOG_INFO, "[SOURCE-FILTER] Checking source '%s' (type: %s)", 
          context->capture_source_name.c_str(), source_id);
+    
+    // Log all settings for debugging
+    const char* json = obs_data_get_json(settings);
+    blog(LOG_INFO, "[SOURCE-FILTER] Source settings: %s", json);
     
     if (strcmp(source_id, "monitor_capture") == 0) {
         // Display Capture - check if current window is on the captured monitor
-        int monitor_idx = (int)obs_data_get_int(settings, "monitor");
+        // OBS uses "monitor_id" (device string) not "monitor" (integer index)
+        const char* monitor_id = obs_data_get_string(settings, "monitor_id");
         
-        // Get monitor of current window
-        HMONITOR current_monitor = MonitorFromWindow(current_hwnd, MONITOR_DEFAULTTOPRIMARY);
-        
-        // Enumerate monitors to find index
-        struct MonitorEnumData {
-            HMONITOR target;
-            int index;
-            int current_index;
-        };
-        MonitorEnumData enum_data = { current_monitor, -1, 0 };
-        
-        EnumDisplayMonitors(NULL, NULL, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) -> BOOL {
-            MonitorEnumData* data = (MonitorEnumData*)dwData;
-            if (hMonitor == data->target) {
-                data->index = data->current_index;
-                return FALSE; // Stop enumeration
+        if (!monitor_id || strlen(monitor_id) == 0) {
+            blog(LOG_WARNING, "[SOURCE-FILTER] Display capture has no monitor_id");
+            matches = false;
+        } else {
+            // Get monitor of current window
+            HMONITOR current_monitor = MonitorFromWindow(current_hwnd, MONITOR_DEFAULTTOPRIMARY);
+            
+            // Get monitor info to retrieve device name
+            MONITORINFOEXA monitor_info = {};
+            monitor_info.cbSize = sizeof(MONITORINFOEXA);
+            
+            if (GetMonitorInfoA(current_monitor, &monitor_info)) {
+                // monitor_info.szDevice is like "\\.\DISPLAY1", "\\.\DISPLAY2", etc.
+                // OBS monitor_id is a device interface path
+                // We need to compare by enumerating all monitors and matching the device
+                
+                struct MonitorMatchData {
+                    const char* target_monitor_id;
+                    HMONITOR current_monitor;
+                    bool found_match;
+                };
+                MonitorMatchData match_data = { monitor_id, current_monitor, false };
+                
+                // Enumerate all monitors and check if current monitor matches the source's monitor_id
+                EnumDisplayMonitors(NULL, NULL, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) -> BOOL {
+                    MonitorMatchData* data = (MonitorMatchData*)dwData;
+                    
+                    // Get device name for this monitor
+                    MONITORINFOEXA info = {};
+                    info.cbSize = sizeof(MONITORINFOEXA);
+                    if (GetMonitorInfoA(hMonitor, &info)) {
+                        // Get display device info to find device ID
+                        DISPLAY_DEVICEA display_device = {};
+                        display_device.cb = sizeof(DISPLAY_DEVICEA);
+                        
+                        // Enumerate through display devices to find one matching this monitor
+                        for (DWORD i = 0; EnumDisplayDevicesA(NULL, i, &display_device, 0); i++) {
+                            if (strcmp(display_device.DeviceName, info.szDevice) == 0) {
+                                // Found the device, now get the device ID
+                                DISPLAY_DEVICEA display_device_ex = {};
+                                display_device_ex.cb = sizeof(DISPLAY_DEVICEA);
+                                
+                                if (EnumDisplayDevicesA(display_device.DeviceName, 0, &display_device_ex, EDD_GET_DEVICE_INTERFACE_NAME)) {
+                                    // Compare device IDs
+                                    if (strcmp(display_device_ex.DeviceID, data->target_monitor_id) == 0) {
+                                        // This is the monitor the source is capturing
+                                        if (hMonitor == data->current_monitor) {
+                                            data->found_match = true;
+                                            return FALSE; // Stop enumeration
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    return TRUE; // Continue enumeration
+                }, (LPARAM)&match_data);
+                
+                matches = match_data.found_match;
+                blog(LOG_INFO, "[SOURCE-FILTER] Display capture: monitor_id='%s', current_device='%s', match=%s",
+                     monitor_id, monitor_info.szDevice, matches ? "YES" : "NO");
+            } else {
+                blog(LOG_WARNING, "[SOURCE-FILTER] Failed to get monitor info for current window");
+                matches = false;
             }
-            data->current_index++;
-            return TRUE;
-        }, (LPARAM)&enum_data);
-        
-        matches = (enum_data.index == monitor_idx);
-        blog(LOG_DEBUG, "[SOURCE-FILTER] Display capture: source monitor=%d, current window monitor=%d, match=%s",
-             monitor_idx, enum_data.index, matches ? "YES" : "NO");
+        }
         
     } else if (strcmp(source_id, "window_capture") == 0) {
         // Window Capture - check if current window matches the captured window
@@ -169,7 +217,7 @@ bool matches_obs_source_target(keystroke_source* context, HWND current_hwnd, con
         std::transform(current_title.begin(), current_title.end(), current_title.begin(), ::tolower);
         
         matches = (current_title.find(target) != std::string::npos) || (target.find(current_title) != std::string::npos);
-        blog(LOG_DEBUG, "[SOURCE-FILTER] Window capture: target='%s', current='%s', match=%s",
+        blog(LOG_INFO, "[SOURCE-FILTER] Window capture: target='%s', current='%s', match=%s",
              target.c_str(), current_window_title, matches ? "YES" : "NO");
         
     } else if (strcmp(source_id, "game_capture") == 0) {
@@ -208,7 +256,7 @@ bool matches_obs_source_target(keystroke_source* context, HWND current_hwnd, con
         std::transform(current_exe.begin(), current_exe.end(), current_exe.begin(), ::tolower);
         
         matches = (target_exe == current_exe);
-        blog(LOG_DEBUG, "[SOURCE-FILTER] Game capture: target='%s', current='%s', match=%s",
+        blog(LOG_INFO, "[SOURCE-FILTER] Game capture: target='%s', current='%s', match=%s",
              target_exe.c_str(), current_exe.c_str(), matches ? "YES" : "NO");
     }
     

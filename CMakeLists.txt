@@ -20,6 +20,7 @@ include_directories(
     ${LIBOBS_INCLUDE_DIR}/../UI/obs-frontend-api
     ${LIBOBS_INCLUDE_DIR}/../build/config
     C:/obs-studio/build/config
+    C:/obs-studio/frontend/api
 )
 
 # Library directories

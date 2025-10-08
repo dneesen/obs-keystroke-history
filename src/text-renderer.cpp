@@ -43,9 +43,13 @@ void render_text_to_texture(keystroke_source* context)
     int line_height = context->font_size + 8;
     int padding = 10;
     int width = 600;  // Fixed width for now
-    int height = line_height * (int)entries_copy.size() + padding * 2;
     
-    blog(LOG_INFO, "[RENDER] Dimensions: %dx%d", width, height);
+    // Use max_entries to determine a fixed height, so the source doesn't jump around
+    // This allows users to anchor it properly in their scene
+    int max_lines = context->max_entries > 0 ? context->max_entries : 10; // Default to 10 if not set
+    int height = line_height * max_lines + padding * 2;
+    
+    blog(LOG_INFO, "[RENDER] Dimensions: %dx%d (max_entries=%d)", width, height, max_lines);
     
     if (width <= 0 || height <= 0) {
         blog(LOG_WARNING, "[RENDER] Invalid dimensions: %dx%d", width, height);
@@ -85,10 +89,31 @@ void render_text_to_texture(keystroke_source* context)
     int bg_g = (bg_color >> 8) & 0xFF;
     int bg_b = bg_color & 0xFF;
     
-    // Fill background - use Windows BGRA format (bottom-up DIB)
-    // If show_background is off, use transparent background (alpha = 0)
+    // Extract text color for later use
+    uint32_t text_color = context->font_color;
+    int text_r = (text_color >> 16) & 0xFF;
+    int text_g = (text_color >> 8) & 0xFF;
+    int text_b = text_color & 0xFF;
+    
+    // Fill background with a contrasting color when background is transparent
+    // This allows us to detect where text was drawn
+    uint8_t fill_r, fill_g, fill_b;
+    if (context->show_background) {
+        // Use actual background color
+        fill_r = bg_r;
+        fill_g = bg_g;
+        fill_b = bg_b;
+    } else {
+        // Use a color that contrasts with text for detection purposes
+        // Use inverse of text color to ensure maximum contrast
+        fill_r = 255 - text_r;
+        fill_g = 255 - text_g;
+        fill_b = 255 - text_b;
+    }
+    
+    // Fill bitmap with fill color
     for (int i = 0; i < width * height; i++) {
-        pixels[i] = (bg_b) | (bg_g << 8) | (bg_r << 16) | (bg_alpha << 24);
+        pixels[i] = (fill_b) | (fill_g << 8) | (fill_r << 16) | (0 << 24); // Start with alpha=0
     }
     
     // Create font
@@ -119,55 +144,88 @@ void render_text_to_texture(keystroke_source* context)
     
     HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
     
-    // Extract text color (ARGB format from settings)
-    uint32_t text_color = context->font_color;
-    int text_r = (text_color >> 16) & 0xFF;
-    int text_g = (text_color >> 8) & 0xFF;
-    int text_b = text_color & 0xFF;
-    
     SetTextColor(hdc, RGB(text_r, text_g, text_b));
     
-    // Only draw opaque background if show_background is enabled
+    // Always use OPAQUE mode so GDI anti-aliasing works properly
+    SetBkMode(hdc, OPAQUE);
     if (context->show_background) {
-        SetBkMode(hdc, OPAQUE);
         SetBkColor(hdc, RGB(bg_r, bg_g, bg_b));
     } else {
-        SetBkMode(hdc, TRANSPARENT);
+        // Use the inverse color as background for rendering
+        // This ensures text is always detectable regardless of text color
+        SetBkColor(hdc, RGB(fill_r, fill_g, fill_b));
     }
     
-    // Render each entry - NO FADE for now, just solid text
-    int y_pos = padding;
-    for (size_t i = 0; i < entries_copy.size(); i++) {
-        const auto& entry = entries_copy[i];
+    // Render each entry
+    // If display_newest_on_top is true, render from top to bottom starting at padding
+    // If display_newest_on_top is false, render from bottom to top, anchoring at the bottom
+    
+    if (context->display_newest_on_top) {
+        // Newest at top: render entries forward (0 to N), starting from top
+        int y_pos = padding;
+        for (size_t i = 0; i < entries_copy.size(); i++) {
+            const auto& entry = entries_copy[i];
+            
+            RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
+            DrawTextA(hdc, entry.text.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            
+            y_pos += line_height;
+        }
+    } else {
+        // Newest at bottom: calculate starting position from bottom up
+        // Start at the bottom and work upward
+        int total_entry_height = line_height * (int)entries_copy.size();
+        int start_y = height - padding - total_entry_height;
         
-        // Draw text - fully opaque for now
-        RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
-        DrawTextA(hdc, entry.text.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        
-        y_pos += line_height;
+        // Render entries in reverse order (oldest first) from calculated start position
+        int y_pos = start_y;
+        for (int i = (int)entries_copy.size() - 1; i >= 0; i--) {
+            const auto& entry = entries_copy[i];
+            
+            RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
+            DrawTextA(hdc, entry.text.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            
+            y_pos += line_height;
+        }
     }
     
     
-    // GDI writes in BGRA format with text rendering
-    // When SetBkMode is TRANSPARENT, GDI doesn't write alpha properly for text
-    // We need to detect text pixels and make them fully opaque
+    // Process alpha channel for each pixel
+    // GDI writes in BGRA format
     for (int i = 0; i < width * height; i++) {
         uint32_t pixel = pixels[i];
         uint8_t b = pixel & 0xFF;
         uint8_t g = (pixel >> 8) & 0xFF;
         uint8_t r = (pixel >> 16) & 0xFF;
-        uint8_t a = (pixel >> 24) & 0xFF;
         
-        // Check if this pixel was modified by DrawText
-        // If the pixel doesn't match the background we filled, it's text
-        bool is_text = (b != bg_b || g != bg_g || r != bg_r);
-        
-        if (is_text) {
-            // This is text - make it fully opaque regardless of color
-            pixels[i] = (255 << 24) | (r << 16) | (g << 8) | b; // BGRA with alpha=255
+        if (context->show_background) {
+            // Background is visible
+            // Check if this pixel is different from the fill color (background)
+            bool is_text = (r != fill_r || g != fill_g || b != fill_b);
+            
+            if (is_text) {
+                // This is text - make it fully opaque
+                pixels[i] = (255 << 24) | (r << 16) | (g << 8) | b;
+            } else {
+                // This is background - use background alpha
+                pixels[i] = (bg_alpha << 24) | (r << 16) | (g << 8) | b;
+            }
         } else {
-            // This is background - keep the alpha we set (respects show_background and opacity)
-            pixels[i] = (bg_alpha << 24) | (r << 16) | (g << 8) | b; // BGRA with background alpha
+            // Background is transparent
+            // We filled with text color, so pixels that match fill are background (transparent)
+            // Pixels that differ are text (may be anti-aliased)
+            
+            bool is_background = (r == fill_r && g == fill_g && b == fill_b);
+            
+            if (is_background) {
+                // Pure background - make fully transparent
+                pixels[i] = (0 << 24) | (r << 16) | (g << 8) | b;
+            } else {
+                // This pixel has been modified by text rendering
+                // It's either pure text or anti-aliased edge
+                // Make it fully opaque (anti-aliasing already in RGB values)
+                pixels[i] = (255 << 24) | (r << 16) | (g << 8) | b;
+            }
         }
     }
     

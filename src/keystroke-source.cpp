@@ -325,14 +325,18 @@ static obs_properties_t* keystroke_source_get_properties(void* data)
     obs_properties_add_bool(props, "use_source_capture",
         obs_module_text("UseSourceCapture"));
     
+    // Note: Removed scene filtering checkbox since frontend API isn't available for plugins
+    // All capture sources from all scenes are shown
+    
     // Dropdown for OBS capture sources (Display/Window/Game Capture)
+    // Shows all capture sources from all scenes (no filtering available without frontend API)
     obs_property_t* source_list = obs_properties_add_list(props, "capture_source_name",
         obs_module_text("CaptureSourceName"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
     
     obs_property_list_add_string(source_list, "-- Select Source --", "");
     
     // Enumerate all Display Capture, Window Capture, and Game Capture sources
-    obs_enum_sources([](void* param, obs_source_t* source) {
+    obs_enum_sources([](void* param, obs_source_t* source) -> bool {
         obs_property_t* list = static_cast<obs_property_t*>(param);
         const char* source_id = obs_source_get_id(source);
         
@@ -340,6 +344,7 @@ static obs_properties_t* keystroke_source_get_properties(void* data)
         if (strcmp(source_id, "monitor_capture") == 0 ||      // Display Capture
             strcmp(source_id, "window_capture") == 0 ||       // Window Capture
             strcmp(source_id, "game_capture") == 0) {         // Game Capture
+            
             const char* name = obs_source_get_name(source);
             if (name && strlen(name) > 0) {
                 obs_property_list_add_string(list, name, name);
