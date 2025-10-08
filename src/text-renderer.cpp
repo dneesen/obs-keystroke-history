@@ -184,11 +184,11 @@ void render_text_to_texture(keystroke_source* context)
     } else {
         // Newest at bottom: render from bottom upward
         // Start at the bottom edge and work upward
-        // Entries are stored [oldest...newest], so render forward order
-        // but start from bottom and move up
+        // Entries are stored [oldest...newest], so we render backwards (newest to oldest)
+        // This places newest at bottom, oldest at top
         int y_pos = height - padding - line_height;
         
-        // Render entries in forward order (oldest to newest) from bottom upward
+        // Render entries in reverse order (newest to oldest) from bottom upward
         for (int i = (int)entries_copy.size() - 1; i >= 0; i--) {
             const auto& entry = entries_copy[i];
             
