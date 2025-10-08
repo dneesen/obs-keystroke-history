@@ -147,13 +147,52 @@ Uppercase: On (built-in)
 | Capture Area Only | Boolean | - | false | Filter by window title |
 | Target Window | String | - | "" | Window title to match (partial) |
 
-## 📝 Feature Documentation
+## 📝 Building from Source
 
-- [BUILD_GUIDE.md](BUILD_GUIDE.md) - Detailed build and setup instructions
-- [DISPLAY_IMPROVEMENTS.md](DISPLAY_IMPROVEMENTS.md) - Uppercase, scroll wheel, repetition counting
-- [TEXT_RENDERING_FIXES.md](TEXT_RENDERING_FIXES.md) - Black text fix, opacity slider, background rendering
-- [ADVANCED_FEATURES.md](ADVANCED_FEATURES.md) - Keystroke grouping, window filtering, debug logging
-- [CRASH_FIX_NOTES.md](CRASH_FIX_NOTES.md) - Mutex deadlock resolution
+### Prerequisites
+- **Visual Studio 2022** with "Desktop development with C++" workload
+- **CMake** 3.16 or later
+- **Git** (for cloning OBS source)
+- **OBS Studio** installed
+
+### Build Steps
+
+1. **Clone OBS Studio source** (for header files):
+   ```powershell
+   cd C:\
+   git clone --recursive https://github.com/obsproject/obs-studio.git
+   ```
+
+2. **Clone this repository**:
+   ```powershell
+   git clone https://github.com/dneesen/obs-keystroke-history.git
+   cd obs-keystroke-history
+   ```
+
+3. **Configure with CMake**:
+   ```powershell
+   mkdir build
+   cd build
+   cmake .. -G "Visual Studio 17 2022" -A x64 ^
+     -DLIBOBS_INCLUDE_DIR="C:/obs-studio/libobs" ^
+     -DOBS_INSTALL_DIR="C:/Program Files/obs-studio"
+   ```
+
+4. **Build the plugin**:
+   ```powershell
+   cmake --build . --config Release
+   ```
+
+5. **Install the plugin**:
+   ```powershell
+   .\install-plugin.ps1  # Run as Administrator
+   ```
+
+6. **Restart OBS Studio**
+
+For detailed build instructions, see [BUILD_GUIDE.md](BUILD_GUIDE.md).
+
+For detailed build instructions, see [BUILD_GUIDE.md](BUILD_GUIDE.md).
 
 ## 🐛 Troubleshooting
 
