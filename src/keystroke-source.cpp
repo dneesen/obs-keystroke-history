@@ -115,6 +115,7 @@ static void keystroke_source_update(void* data, obs_data_t* settings)
     
     context->group_keystrokes = obs_data_get_bool(settings, "group_keystrokes");
     context->group_duration = (float)obs_data_get_double(settings, "group_duration");
+    context->display_newest_on_top = obs_data_get_bool(settings, "display_newest_on_top");
     
     // Limit entries to max
     std::lock_guard<std::mutex> lock(context->entries_mutex);
@@ -242,6 +243,7 @@ static void keystroke_source_get_defaults(obs_data_t* settings)
     obs_data_set_default_string(settings, "target_window", "");
     obs_data_set_default_bool(settings, "group_keystrokes", false);
     obs_data_set_default_double(settings, "group_duration", 0.5);
+    obs_data_set_default_bool(settings, "display_newest_on_top", false); // Default: newest at bottom
 }
 
 static obs_properties_t* keystroke_source_get_properties(void* data)
@@ -262,8 +264,26 @@ static obs_properties_t* keystroke_source_get_properties(void* data)
     obs_properties_add_float_slider(props, "fade_duration",
         obs_module_text("FadeDuration"), 0.0, 10.0, 0.5);
     
-    obs_properties_add_text(props, "font_name",
-        obs_module_text("FontName"), OBS_TEXT_DEFAULT);
+    // Font dropdown with common cross-platform fonts
+    obs_property_t* font_list = obs_properties_add_list(props, "font_name",
+        obs_module_text("FontName"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+    
+    // Add common fonts available across Windows, macOS, and Linux
+    obs_property_list_add_string(font_list, "Arial", "Arial");
+    obs_property_list_add_string(font_list, "Arial Black", "Arial Black");
+    obs_property_list_add_string(font_list, "Calibri", "Calibri");
+    obs_property_list_add_string(font_list, "Cambria", "Cambria");
+    obs_property_list_add_string(font_list, "Comic Sans MS", "Comic Sans MS");
+    obs_property_list_add_string(font_list, "Consolas", "Consolas");
+    obs_property_list_add_string(font_list, "Courier New", "Courier New");
+    obs_property_list_add_string(font_list, "Georgia", "Georgia");
+    obs_property_list_add_string(font_list, "Impact", "Impact");
+    obs_property_list_add_string(font_list, "Lucida Console", "Lucida Console");
+    obs_property_list_add_string(font_list, "Segoe UI", "Segoe UI");
+    obs_property_list_add_string(font_list, "Tahoma", "Tahoma");
+    obs_property_list_add_string(font_list, "Times New Roman", "Times New Roman");
+    obs_property_list_add_string(font_list, "Trebuchet MS", "Trebuchet MS");
+    obs_property_list_add_string(font_list, "Verdana", "Verdana");
     
     obs_properties_add_int_slider(props, "font_size",
         obs_module_text("FontSize"), 8, 72, 1);
@@ -279,6 +299,10 @@ static obs_properties_t* keystroke_source_get_properties(void* data)
     
     obs_properties_add_float_slider(props, "background_opacity",
         obs_module_text("BackgroundOpacity"), 0.0, 1.0, 0.01);
+    
+    // Display direction
+    obs_properties_add_bool(props, "display_newest_on_top",
+        obs_module_text("DisplayNewestOnTop"));
     
     // Keystroke grouping settings
     obs_properties_add_bool(props, "group_keystrokes",
@@ -315,7 +339,9 @@ void add_keystroke(keystroke_source* context, const std::string& keystroke)
     
     // Check if we should count repetitions or group keystrokes
     if (!context->entries.empty() && elapsed < 1.0f) { // Within 1 second window
-        auto& last_entry = context->entries.back();
+        // Always work with the most recent entry (at end if newest_on_bottom, at start if newest_on_top)
+        size_t recent_index = context->display_newest_on_top ? 0 : context->entries.size() - 1;
+        auto& last_entry = context->entries[recent_index];
         
         // Check for key repetition (same key pressed multiple times)
         // Extract base key without count (e.g., "A x3" -> "A")
@@ -391,7 +417,12 @@ void add_keystroke(keystroke_source* context, const std::string& keystroke)
     entry.timestamp = now;
     entry.alpha = 1.0f;
     
-    context->entries.push_back(entry);
+    // Add to beginning (newest on top) or end (newest at bottom)
+    if (context->display_newest_on_top) {
+        context->entries.insert(context->entries.begin(), entry);
+    } else {
+        context->entries.push_back(entry);
+    }
     context->last_keystroke_time = now;
     
     blog(LOG_INFO, "[ENTRIES] Added keystroke: '%s' (total entries: %d)", 
@@ -399,6 +430,10 @@ void add_keystroke(keystroke_source* context, const std::string& keystroke)
     
     // Maintain max entries limit
     if (context->entries.size() > (size_t)context->max_entries) {
-        context->entries.erase(context->entries.begin());
+        if (context->display_newest_on_top) {
+            context->entries.pop_back(); // Remove oldest from bottom
+        } else {
+            context->entries.erase(context->entries.begin()); // Remove oldest from top
+        }
     }
 }

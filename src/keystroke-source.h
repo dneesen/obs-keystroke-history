@@ -30,6 +30,7 @@ struct keystroke_source {
     std::string target_window; // Window title to monitor (empty = any window)
     bool group_keystrokes; // Group rapid keystrokes together
     float group_duration; // Maximum time between keystrokes to group (seconds)
+    bool display_newest_on_top; // true = newest at top, false = newest at bottom
     
     // Font settings
     std::string font_name;
