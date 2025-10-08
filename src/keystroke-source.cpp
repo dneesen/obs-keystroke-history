@@ -101,16 +101,20 @@ static void keystroke_source_update(void* data, obs_data_t* settings)
     context->background_opacity = (float)obs_data_get_double(settings, "background_opacity");
     context->capture_area_only = obs_data_get_bool(settings, "capture_area_only");
     context->target_window = obs_data_get_string(settings, "target_window");
+    context->capture_source_name = obs_data_get_string(settings, "capture_source_name");
+    context->use_source_capture = obs_data_get_bool(settings, "use_source_capture");
     
     // Log filter configuration for debugging
     if (context->capture_area_only) {
-        if (context->target_window.empty()) {
-            blog(LOG_INFO, "[CONFIG] Window filtering ENABLED - Capturing from ALL windows (no target specified)");
-        } else {
+        if (context->use_source_capture && !context->capture_source_name.empty()) {
+            blog(LOG_INFO, "[CONFIG] Source filtering ENABLED - Target source: '%s'", context->capture_source_name.c_str());
+        } else if (!context->target_window.empty()) {
             blog(LOG_INFO, "[CONFIG] Window filtering ENABLED - Target: '%s'", context->target_window.c_str());
+        } else {
+            blog(LOG_INFO, "[CONFIG] Filtering ENABLED - Capturing from ALL windows");
         }
     } else {
-        blog(LOG_INFO, "[CONFIG] Window filtering DISABLED - Capturing from all windows");
+        blog(LOG_INFO, "[CONFIG] Filtering DISABLED - Capturing from all windows");
     }
     
     context->group_keystrokes = obs_data_get_bool(settings, "group_keystrokes");
@@ -241,6 +245,8 @@ static void keystroke_source_get_defaults(obs_data_t* settings)
     obs_data_set_default_double(settings, "background_opacity", 0.5); // 50% opacity
     obs_data_set_default_bool(settings, "capture_area_only", false);
     obs_data_set_default_string(settings, "target_window", "");
+    obs_data_set_default_string(settings, "capture_source_name", "");
+    obs_data_set_default_bool(settings, "use_source_capture", false);
     obs_data_set_default_bool(settings, "group_keystrokes", false);
     obs_data_set_default_double(settings, "group_duration", 0.5);
     obs_data_set_default_bool(settings, "display_newest_on_top", false); // Default: newest at bottom
@@ -315,13 +321,42 @@ static obs_properties_t* keystroke_source_get_properties(void* data)
     obs_properties_add_bool(props, "capture_area_only",
         obs_module_text("CaptureAreaOnly"));
     
+    // Radio-style selection: Use source capture or window title
+    obs_properties_add_bool(props, "use_source_capture",
+        obs_module_text("UseSourceCapture"));
+    
+    // Dropdown for OBS capture sources (Display/Window/Game Capture)
+    obs_property_t* source_list = obs_properties_add_list(props, "capture_source_name",
+        obs_module_text("CaptureSourceName"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+    
+    obs_property_list_add_string(source_list, "-- Select Source --", "");
+    
+    // Enumerate all Display Capture, Window Capture, and Game Capture sources
+    obs_enum_sources([](void* param, obs_source_t* source) {
+        obs_property_t* list = static_cast<obs_property_t*>(param);
+        const char* source_id = obs_source_get_id(source);
+        
+        // Only add capture sources
+        if (strcmp(source_id, "monitor_capture") == 0 ||      // Display Capture
+            strcmp(source_id, "window_capture") == 0 ||       // Window Capture
+            strcmp(source_id, "game_capture") == 0) {         // Game Capture
+            const char* name = obs_source_get_name(source);
+            if (name && strlen(name) > 0) {
+                obs_property_list_add_string(list, name, name);
+            }
+        }
+        
+        return true; // Continue enumeration
+    }, source_list);
+    
     // Text field for target window title (partial match, case-insensitive)
     obs_property_t* target_window = obs_properties_add_text(props, "target_window",
         obs_module_text("TargetWindow"), OBS_TEXT_DEFAULT);
     
     obs_property_set_long_description(target_window,
         "Enter part of the window title to filter (e.g., 'notepad', 'chrome', 'autocad'). "
-        "Leave empty to capture from all windows. Case-insensitive partial match.");
+        "Leave empty to capture from all windows. Case-insensitive partial match. "
+        "Ignored if 'Use OBS Source Capture' is enabled.");
     
     return props;
 }

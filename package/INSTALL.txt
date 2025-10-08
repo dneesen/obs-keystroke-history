@@ -1,0 +1,55 @@
+# OBS Keystroke History Plugin - Manual Installation
+
+## Installation Instructions
+
+1. Close OBS Studio if it's running
+
+2. Copy the files to your OBS installation directory:
+   
+   **Default OBS Location**: C:\Program Files\obs-studio\
+
+   - Copy obs-plugins\64bit\keystroke-history.dll 
+     to: C:\Program Files\obs-studio\obs-plugins\64bit\
+   
+   - Copy data\obs-plugins\keystroke-history\ folder
+     to: C:\Program Files\obs-studio\data\obs-plugins\
+
+3. Start OBS Studio
+
+4. Add the source: Sources → + → Keystroke History
+
+## Alternative: Automated Installation
+
+Run the included install-plugin.ps1 script as Administrator:
+
+```powershell
+Right-click install-plugin.ps1 → Run with PowerShell
+```
+
+## Verification
+
+After installation, you should see:
+- C:\Program Files\obs-studio\obs-plugins\64bit\keystroke-history.dll
+- C:\Program Files\obs-studio\data\obs-plugins\keystroke-history\locale\en-US.ini
+
+## Troubleshooting
+
+If the plugin doesn't appear in OBS:
+1. Make sure OBS is completely closed before installing
+2. Verify files are in the correct directories
+3. Run OBS as Administrator
+4. Check OBS log file: %appdata%\obs-studio\logs\
+
+## Features
+
+- Real-time keystroke and mouse action capture
+- Uppercase key display (A, B, C)
+- Key repetition counting (A x3, W x5)
+- Keystroke grouping for rapid typing
+- Window filtering
+- Scroll wheel capture
+- Customizable fonts, colors, and backgrounds
+- Display direction (newest on top or bottom)
+
+For more information, visit:
+https://github.com/dneesen/obs-keystroke-history

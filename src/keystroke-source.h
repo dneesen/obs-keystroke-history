@@ -28,6 +28,8 @@ struct keystroke_source {
     float fade_duration; // seconds
     bool capture_area_only; // Only capture when mouse is in a specific area
     std::string target_window; // Window title to monitor (empty = any window)
+    std::string capture_source_name; // OBS source name to monitor (display/window capture)
+    bool use_source_capture; // true = use OBS source, false = use window title
     bool group_keystrokes; // Group rapid keystrokes together
     float group_duration; // Maximum time between keystrokes to group (seconds)
     bool display_newest_on_top; // true = newest at top, false = newest at bottom

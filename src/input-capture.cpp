@@ -1,5 +1,6 @@
 #include "input-capture.h"
 #include <obs-module.h>
+#include <obs.h>
 #include <map>
 #include <set>
 #include <algorithm>
@@ -99,6 +100,124 @@ std::string get_current_modifiers()
     return modifiers;
 }
 
+bool matches_obs_source_target(keystroke_source* context, HWND current_hwnd, const char* current_window_title)
+{
+    if (context->capture_source_name.empty()) {
+        blog(LOG_WARNING, "[SOURCE-FILTER] No capture source specified");
+        return false;
+    }
+    
+    // Find the OBS source by name
+    obs_source_t* source = obs_get_source_by_name(context->capture_source_name.c_str());
+    if (!source) {
+        blog(LOG_WARNING, "[SOURCE-FILTER] Source '%s' not found", context->capture_source_name.c_str());
+        return false;
+    }
+    
+    // Get source ID to determine type
+    const char* source_id = obs_source_get_id(source);
+    obs_data_t* settings = obs_source_get_settings(source);
+    bool matches = false;
+    
+    blog(LOG_DEBUG, "[SOURCE-FILTER] Checking source '%s' (type: %s)", 
+         context->capture_source_name.c_str(), source_id);
+    
+    if (strcmp(source_id, "monitor_capture") == 0) {
+        // Display Capture - check if current window is on the captured monitor
+        int monitor_idx = (int)obs_data_get_int(settings, "monitor");
+        
+        // Get monitor of current window
+        HMONITOR current_monitor = MonitorFromWindow(current_hwnd, MONITOR_DEFAULTTOPRIMARY);
+        
+        // Enumerate monitors to find index
+        struct MonitorEnumData {
+            HMONITOR target;
+            int index;
+            int current_index;
+        };
+        MonitorEnumData enum_data = { current_monitor, -1, 0 };
+        
+        EnumDisplayMonitors(NULL, NULL, [](HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) -> BOOL {
+            MonitorEnumData* data = (MonitorEnumData*)dwData;
+            if (hMonitor == data->target) {
+                data->index = data->current_index;
+                return FALSE; // Stop enumeration
+            }
+            data->current_index++;
+            return TRUE;
+        }, (LPARAM)&enum_data);
+        
+        matches = (enum_data.index == monitor_idx);
+        blog(LOG_DEBUG, "[SOURCE-FILTER] Display capture: source monitor=%d, current window monitor=%d, match=%s",
+             monitor_idx, enum_data.index, matches ? "YES" : "NO");
+        
+    } else if (strcmp(source_id, "window_capture") == 0) {
+        // Window Capture - check if current window matches the captured window
+        const char* target_window = obs_data_get_string(settings, "window");
+        
+        // OBS stores window format as: "title:class:exe"
+        // Extract just the title part for comparison
+        std::string target(target_window);
+        size_t colon_pos = target.find(':');
+        if (colon_pos != std::string::npos) {
+            target = target.substr(0, colon_pos);
+        }
+        
+        // Case-insensitive comparison
+        std::string current_title(current_window_title);
+        std::transform(target.begin(), target.end(), target.begin(), ::tolower);
+        std::transform(current_title.begin(), current_title.end(), current_title.begin(), ::tolower);
+        
+        matches = (current_title.find(target) != std::string::npos) || (target.find(current_title) != std::string::npos);
+        blog(LOG_DEBUG, "[SOURCE-FILTER] Window capture: target='%s', current='%s', match=%s",
+             target.c_str(), current_window_title, matches ? "YES" : "NO");
+        
+    } else if (strcmp(source_id, "game_capture") == 0) {
+        // Game Capture - check if current window matches the captured executable
+        const char* target_window = obs_data_get_string(settings, "window");
+        const char* capture_mode = obs_data_get_string(settings, "capture_mode");
+        
+        // Extract executable name from OBS format "title:class:exe"
+        std::string target(target_window);
+        size_t last_colon = target.rfind(':');
+        std::string target_exe;
+        if (last_colon != std::string::npos) {
+            target_exe = target.substr(last_colon + 1);
+        }
+        
+        // Get current process executable name
+        DWORD process_id;
+        GetWindowThreadProcessId(current_hwnd, &process_id);
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+        char exe_path[MAX_PATH] = {0};
+        if (hProcess) {
+            DWORD size = MAX_PATH;
+            QueryFullProcessImageNameA(hProcess, 0, exe_path, &size);
+            CloseHandle(hProcess);
+        }
+        
+        // Extract just the executable name from full path
+        std::string current_exe(exe_path);
+        size_t last_slash = current_exe.rfind('\\');
+        if (last_slash != std::string::npos) {
+            current_exe = current_exe.substr(last_slash + 1);
+        }
+        
+        // Case-insensitive comparison
+        std::transform(target_exe.begin(), target_exe.end(), target_exe.begin(), ::tolower);
+        std::transform(current_exe.begin(), current_exe.end(), current_exe.begin(), ::tolower);
+        
+        matches = (target_exe == current_exe);
+        blog(LOG_DEBUG, "[SOURCE-FILTER] Game capture: target='%s', current='%s', match=%s",
+             target_exe.c_str(), current_exe.c_str(), matches ? "YES" : "NO");
+    }
+    
+    obs_data_release(settings);
+    obs_source_release(source);
+    
+    return matches;
+}
+
 bool should_capture_input(keystroke_source* context)
 {
     // If area-based capture is disabled, always capture
@@ -113,44 +232,82 @@ bool should_capture_input(keystroke_source* context)
         return false;
     }
     
-    // If no target window specified, capture from all windows when enabled
-    if (context->target_window.empty()) {
-        // Only log once at startup, not on every keystroke
-        static bool logged_once = false;
-        if (!logged_once) {
-            blog(LOG_INFO, "[FILTER] Window filtering enabled but no target specified - capturing all windows");
-            logged_once = true;
-        }
-        return true;
-    }
-    
-    // Get window title
+    // Get window title (needed for both modes)
     char window_title[256] = {0};
     GetWindowTextA(hwnd, window_title, sizeof(window_title));
     
-    // Check if window title contains target string (case-insensitive partial match)
-    std::string title(window_title);
-    std::string target(context->target_window);
-    
-    // Convert to lowercase for comparison
-    std::transform(title.begin(), title.end(), title.begin(), ::tolower);
-    std::transform(target.begin(), target.end(), target.begin(), ::tolower);
-    
-    // Return true if target is found in window title
-    bool matches = title.find(target) != std::string::npos;
-    
-    // Log window changes (not every keystroke, only when window changes)
-    static std::string last_window_title;
-    static bool last_match_result = false;
-    
-    if (title != last_window_title || matches != last_match_result) {
-        blog(LOG_INFO, "[FILTER] Window: '%s' | Target: '%s' | Match: %s", 
-             window_title, context->target_window.c_str(), matches ? "YES" : "NO");
-        last_window_title = title;
-        last_match_result = matches;
+    // Check which filtering mode to use
+    if (context->use_source_capture) {
+        // OBS Source-based filtering
+        static bool logged_mode_once = false;
+        if (!logged_mode_once) {
+            blog(LOG_INFO, "[FILTER] Using OBS source capture mode: '%s'", 
+                 context->capture_source_name.c_str());
+            logged_mode_once = true;
+        }
+        
+        if (context->capture_source_name.empty()) {
+            blog(LOG_WARNING, "[FILTER] Source capture enabled but no source specified");
+            return false;
+        }
+        
+        bool matches = matches_obs_source_target(context, hwnd, window_title);
+        
+        // Log window changes (not every keystroke)
+        static std::string last_window_title;
+        static bool last_match_result = false;
+        
+        if (std::string(window_title) != last_window_title || matches != last_match_result) {
+            blog(LOG_INFO, "[FILTER] Window: '%s' | Source: '%s' | Match: %s", 
+                 window_title, context->capture_source_name.c_str(), matches ? "YES" : "NO");
+            last_window_title = window_title;
+            last_match_result = matches;
+        }
+        
+        return matches;
+        
+    } else {
+        // Traditional window title filtering
+        static bool logged_mode_once = false;
+        if (!logged_mode_once) {
+            blog(LOG_INFO, "[FILTER] Using window title filtering mode");
+            logged_mode_once = true;
+        }
+        
+        // If no target window specified, capture from all windows when enabled
+        if (context->target_window.empty()) {
+            static bool logged_once = false;
+            if (!logged_once) {
+                blog(LOG_INFO, "[FILTER] Window filtering enabled but no target specified - capturing all windows");
+                logged_once = true;
+            }
+            return true;
+        }
+        
+        // Check if window title contains target string (case-insensitive partial match)
+        std::string title(window_title);
+        std::string target(context->target_window);
+        
+        // Convert to lowercase for comparison
+        std::transform(title.begin(), title.end(), title.begin(), ::tolower);
+        std::transform(target.begin(), target.end(), target.begin(), ::tolower);
+        
+        // Return true if target is found in window title
+        bool matches = title.find(target) != std::string::npos;
+        
+        // Log window changes (not every keystroke)
+        static std::string last_window_title;
+        static bool last_match_result = false;
+        
+        if (title != last_window_title || matches != last_match_result) {
+            blog(LOG_INFO, "[FILTER] Window: '%s' | Target: '%s' | Match: %s", 
+                 window_title, context->target_window.c_str(), matches ? "YES" : "NO");
+            last_window_title = title;
+            last_match_result = matches;
+        }
+        
+        return matches;
     }
-    
-    return matches;
 }
 
 bool is_password_field_active()
