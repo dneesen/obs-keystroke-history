@@ -156,6 +156,16 @@ void render_text_to_texture(keystroke_source* context)
         SetBkColor(hdc, RGB(fill_r, fill_g, fill_b));
     }
     
+    // Determine text alignment flags
+    UINT alignment_flags = DT_VCENTER | DT_SINGLELINE;
+    if (context->text_alignment == "center") {
+        alignment_flags |= DT_CENTER;
+    } else if (context->text_alignment == "right") {
+        alignment_flags |= DT_RIGHT;
+    } else {
+        alignment_flags |= DT_LEFT; // Default
+    }
+    
     // Render each entry
     // If display_newest_on_top is true, render from top to bottom starting at padding
     // If display_newest_on_top is false, render from bottom to top, anchoring at the bottom
@@ -167,25 +177,25 @@ void render_text_to_texture(keystroke_source* context)
             const auto& entry = entries_copy[i];
             
             RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
-            DrawTextA(hdc, entry.text.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            DrawTextA(hdc, entry.text.c_str(), -1, &rect, alignment_flags);
             
             y_pos += line_height;
         }
     } else {
-        // Newest at bottom: calculate starting position from bottom up
-        // Start at the bottom and work upward
-        int total_entry_height = line_height * (int)entries_copy.size();
-        int start_y = height - padding - total_entry_height;
+        // Newest at bottom: render from bottom upward
+        // Start at the bottom edge and work upward
+        // Entries are stored [oldest...newest], so render forward order
+        // but start from bottom and move up
+        int y_pos = height - padding - line_height;
         
-        // Render entries in reverse order (oldest first) from calculated start position
-        int y_pos = start_y;
+        // Render entries in forward order (oldest to newest) from bottom upward
         for (int i = (int)entries_copy.size() - 1; i >= 0; i--) {
             const auto& entry = entries_copy[i];
             
             RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
-            DrawTextA(hdc, entry.text.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            DrawTextA(hdc, entry.text.c_str(), -1, &rect, alignment_flags);
             
-            y_pos += line_height;
+            y_pos -= line_height;  // Move UP for the next (older) entry
         }
     }
     

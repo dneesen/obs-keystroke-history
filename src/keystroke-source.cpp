@@ -96,6 +96,7 @@ static void keystroke_source_update(void* data, obs_data_t* settings)
     context->font_name = obs_data_get_string(settings, "font_name");
     context->font_size = (int)obs_data_get_int(settings, "font_size");
     context->font_color = (uint32_t)obs_data_get_int(settings, "font_color");
+    context->text_alignment = obs_data_get_string(settings, "text_alignment");
     context->background_color = (uint32_t)obs_data_get_int(settings, "background_color");
     context->show_background = obs_data_get_bool(settings, "show_background");
     context->background_opacity = (float)obs_data_get_double(settings, "background_opacity");
@@ -240,6 +241,7 @@ static void keystroke_source_get_defaults(obs_data_t* settings)
     obs_data_set_default_string(settings, "font_name", "Arial");
     obs_data_set_default_int(settings, "font_size", 24);
     obs_data_set_default_int(settings, "font_color", 0xFFFFFFFF); // White
+    obs_data_set_default_string(settings, "text_alignment", "left"); // Default: left aligned
     obs_data_set_default_int(settings, "background_color", 0x000000); // Black
     obs_data_set_default_bool(settings, "show_background", true);
     obs_data_set_default_double(settings, "background_opacity", 0.5); // 50% opacity
@@ -296,6 +298,13 @@ static obs_properties_t* keystroke_source_get_properties(void* data)
     
     obs_properties_add_color(props, "font_color",
         obs_module_text("FontColor"));
+    
+    // Text alignment dropdown
+    obs_property_t* alignment_list = obs_properties_add_list(props, "text_alignment",
+        obs_module_text("TextAlignment"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+    obs_property_list_add_string(alignment_list, obs_module_text("TextAlignment.Left"), "left");
+    obs_property_list_add_string(alignment_list, obs_module_text("TextAlignment.Center"), "center");
+    obs_property_list_add_string(alignment_list, obs_module_text("TextAlignment.Right"), "right");
     
     obs_properties_add_bool(props, "show_background",
         obs_module_text("ShowBackground"));

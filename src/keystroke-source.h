@@ -41,6 +41,7 @@ struct keystroke_source {
     uint32_t background_color;
     bool show_background;
     float background_opacity; // 0.0 to 1.0
+    std::string text_alignment; // "left", "center", or "right"
     
     // Keystroke history
     std::vector<keystroke_entry> entries;
