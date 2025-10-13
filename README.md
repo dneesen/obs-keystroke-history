@@ -1,6 +1,7 @@
 # OBS Keystroke History Plugin
 
 ![OBS Studio](https://img.shields.io/badge/OBS%20Studio-32.0.1-blue)
+![Version](https://img.shields.io/badge/Version-1.2.1-brightgreen)
 ![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6)
 ![License](https://img.shields.io/badge/License-GPL%20v2-green)
 
@@ -9,13 +10,14 @@ A sophisticated OBS Studio plugin that displays keystroke and mouse action histo
 ## ✨ Features
 
 ### Core Functionality
-- ⌨️ **Real-time keystroke capture** - Shows keys as they're pressed
+- ⌨️ **Real-time keystroke capture** - Shows keys as they're pressed with Unicode support
 - 🖱️ **Mouse action tracking** - Left, right, middle clicks, and scroll wheel
 - 🎨 **Fully customizable appearance** - Font, size, colors, and background
 - 📊 **Configurable history** - Display 5-20 recent entries
 - ⏱️ **Auto-disappear** - Entries fade away after configurable duration
 
 ### Advanced Features
+- ✨ **Unicode Support** - Proper display of arrow keys (←, ↑, →, ↓) and special characters
 - 🔤 **Uppercase display** - All letter keys shown as capitals (A, B, C)
 - 🔢 **Key repetition counting** - Shows "A x3" for repeated presses
 - 📝 **Keystroke grouping** - Groups rapid typing into words (e.g., "HELLO")

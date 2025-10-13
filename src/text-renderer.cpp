@@ -3,6 +3,7 @@
 #include <graphics/graphics.h>
 #include <util/platform.h>
 #include <vector>
+#include <string>
 #include <windows.h>
 #include <wingdi.h>
 
@@ -116,8 +117,13 @@ void render_text_to_texture(keystroke_source* context)
         pixels[i] = (fill_b) | (fill_g << 8) | (fill_r << 16) | (0 << 24); // Start with alpha=0
     }
     
-    // Create font
-    HFONT hFont = CreateFontA(
+    // Create font - Use CreateFontW for Unicode support
+    // Convert font name from UTF-8 to wide string
+    int wchars_needed = MultiByteToWideChar(CP_UTF8, 0, context->font_name.c_str(), -1, NULL, 0);
+    std::wstring font_name_wide(wchars_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, context->font_name.c_str(), -1, &font_name_wide[0], wchars_needed);
+    
+    HFONT hFont = CreateFontW(
         context->font_size,           // Height
         0,                            // Width (auto)
         0,                            // Escapement
@@ -131,7 +137,7 @@ void render_text_to_texture(keystroke_source* context)
         CLIP_DEFAULT_PRECIS,          // Clipping precision
         ANTIALIASED_QUALITY,          // Quality
         DEFAULT_PITCH | FF_DONTCARE,  // Pitch and family
-        context->font_name.c_str()    // Font name
+        font_name_wide.c_str()        // Font name
     );
     
     if (!hFont) {
@@ -176,8 +182,13 @@ void render_text_to_texture(keystroke_source* context)
         for (size_t i = 0; i < entries_copy.size(); i++) {
             const auto& entry = entries_copy[i];
             
+            // Convert UTF-8 string to wide string for Unicode rendering
+            int wchars_needed = MultiByteToWideChar(CP_UTF8, 0, entry.text.c_str(), -1, NULL, 0);
+            std::wstring text_wide(wchars_needed, 0);
+            MultiByteToWideChar(CP_UTF8, 0, entry.text.c_str(), -1, &text_wide[0], wchars_needed);
+            
             RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
-            DrawTextA(hdc, entry.text.c_str(), -1, &rect, alignment_flags);
+            DrawTextW(hdc, text_wide.c_str(), -1, &rect, alignment_flags);
             
             y_pos += line_height;
         }
@@ -192,8 +203,13 @@ void render_text_to_texture(keystroke_source* context)
         for (int i = (int)entries_copy.size() - 1; i >= 0; i--) {
             const auto& entry = entries_copy[i];
             
+            // Convert UTF-8 string to wide string for Unicode rendering
+            int wchars_needed = MultiByteToWideChar(CP_UTF8, 0, entry.text.c_str(), -1, NULL, 0);
+            std::wstring text_wide(wchars_needed, 0);
+            MultiByteToWideChar(CP_UTF8, 0, entry.text.c_str(), -1, &text_wide[0], wchars_needed);
+            
             RECT rect = { padding, y_pos, width - padding, y_pos + line_height };
-            DrawTextA(hdc, entry.text.c_str(), -1, &rect, alignment_flags);
+            DrawTextW(hdc, text_wide.c_str(), -1, &rect, alignment_flags);
             
             y_pos -= line_height;  // Move UP for the next (older) entry
         }
